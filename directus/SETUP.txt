@@ -1,0 +1,90 @@
+Directus + лендинг (REST, операционные таблицы)
+
+Как устроено сейчас
+-----------
+- Next.js читает только через Directus REST: doctors, services, reviews, doctor_specializations,
+  specialization_services, specializations, cms_site_settings (см. lending/lib/cms/directus.ts).
+- Правки в админке Directus по этим коллекциям пишут в те же таблицы, что и Spring — следите за консистентностью.
+
+Prerequisites
+-----------
+1. При необходимости: sql migration/cms_overlay.sql (cms_site_settings и overlay-таблицы).
+   Доп. поля SEO/«О нас»: sql migration/cms_site_settings_meta_about.sql (ALTER на существующую БД).
+2. После смены схемы БД: docker compose restart directus.
+
+Коллекции — доступ роли static token
+-----------
+Минимум Read: doctors, services, reviews, doctor_specializations, specialization_services,
+  specializations, cms_site_settings.
+Для правки каталога из CMS — Read + Update (и Create по необходимости) на doctors, services и связанные.
+
+- Фото врачей: в `doctors.photo` храните UUID файла Directus. Лендинг отдаёт картинку через
+  **прокси** `GET /api/directus-asset?id=<uuid>` (сервер подставляет `DIRECTUS_TOKEN`). Поле BYTEA в REST не запрашивать — Directus может падать по памяти.
+
+Static token for Next.js SSR
+-----------
+1. Directus Admin -> Settings -> Access Tokens -> Create token (custom static token).
+2. Set long expiry or no expiry per your policy.
+3. Роль токена: Read на doctors, services, reviews, doctor_specializations, specialization_services,
+   specializations, cms_site_settings; для редактирования каталога — также Update/Create на нужных коллекциях.
+4. Put the token in lending environment:
+     DIRECTUS_TOKEN=<token>
+     NEXT_PUBLIC_DIRECTUS_URL=http://localhost:8055   (browser / dev)
+     DIRECTUS_INTERNAL_URL=http://directus:8055        (Docker SSR; optional override)
+
+docker-compose.yml placeholder "your_static_token_here" should be replaced with the real token for production.
+
+Directus 11.x — где права (пункта «Roles & Permissions» больше нет)
+-----------
+В боковом меню «Настройки» (шестерёнка) используйте:
+
+- **Роли пользователей** — список ролей (Administrator, Public и т.д.). Откройте роль, которая
+  назначена вашему Static Token: там задаются связанные политики и доступ к коллекциям.
+
+- **Политики доступа** — правила «читать/писать коллекцию X». Для лендинга нужны doctors, services,
+  reviews, doctor_specializations, specialization_services, cms_site_settings (или роль Administrator).
+
+- **Модель данных** — только список коллекций и полей; сами разрешения Read/Create задаются не здесь,
+  а через роли + политики.
+
+Токены: **Настройки проекта** (или профиль администратора) → раздел с токенами / Access Tokens —
+зависит от сборки; часто: шестерёнка → **Настройки** внизу списка → вкладки проекта, либо аватар
+админа → Personal Access Tokens.
+
+Permissions sketch
+-----------
+Static token для Next (SSR):
+- Read: doctors, services, reviews, doctor_specializations, specialization_services, cms_site_settings.
+
+Редактор каталога (осторожно — те же таблицы, что у Spring):
+- Read + Update (+ Create при необходимости): doctors, services, связи специализаций.
+
+Singleton site settings
+-----------
+cms_site_settings uses a single row id=1. In Directus, configure as singleton or edit the single row manually.
+
+Operational photo vs Directus file
+-----------
+See lending/lib/cms/PHOTO_AND_REVIEWS.txt
+
+Если лендинг всё ещё со статическими текстами / «ничего не меняется»
+-----------
+Причины почти всегда две:
+
+1) 401 INVALID_CREDENTIALS при запросе из Next
+   Значение DIRECTUS_TOKEN в lending/.env.local недействительно (устарело, другой экземпляр Directus,
+   опечатка). Создайте новый токен:
+   Settings → Access Tokens → Create Static Token → скопируйте целиком → перезапустите `npm run dev`
+   после правки .env.local.
+
+2) 403 FORBIDDEN / «no permission… doctor_specializations»
+   Роль static token должна иметь Read на doctor_specializations и на specializations
+   (второе нужно для вложенного поля specialization_id.name в readItems).
+   Плюс: коллекция есть в **Модель данных** после того как таблица появилась в Postgres; при смене схемы — restart directus.
+
+2b) 403 или «collection does not exist» (другие коллекции)
+   Перезапустите Directus. В **Модель данных** должны быть doctors, services, reviews и т.д.
+   У роли static token в **Политики** выдайте Read на перечисленные в directus.ts коллекции.
+
+Локальный dev Next на Windows: используйте только NEXT_PUBLIC_DIRECTUS_URL=http://localhost:8055.
+Не ставьте DIRECTUS_INTERNAL_URL=http://directus:8055 — это только внутри Docker-сети (контейнер lending).

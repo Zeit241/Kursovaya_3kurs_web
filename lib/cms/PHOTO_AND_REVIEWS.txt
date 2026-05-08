@@ -1,0 +1,6 @@
+Photo (лендинг)
+- Коллекция doctors, поле photo: UUID файла в directus_files или URL (см. doctors_photo_directus.sql / бэкенд).
+- directus.ts читает operational_photo_ref из doctors.photo; doctorPortraitUrl в images.ts: assets/<uuid> или внешний http(s).
+
+Reviews
+- Читаются с коллекции reviews (и связи doctor/patient через user); с cms_review_site и v_site_reviews в проекте больше не связываем.
