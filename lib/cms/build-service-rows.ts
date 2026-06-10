@@ -22,7 +22,7 @@ export function buildServiceRows (raw: VSiteServiceRow[]): ServiceRowVm[] {
     return {
       id: s.service_id,
       title: title || `Услуга #${s.service_id}`,
-      desc: s.description_display,
+      desc: s.description_display ?? null,
       priceLabel: formatPriceRu(s.operational_price),
       durationLabel: formatDurationRu(s.duration_minutes),
       specializationIds: [...(s.specialization_ids ?? [])],
